@@ -3,9 +3,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Users, Plus, Mail, Copy, Check, Loader2 } from 'lucide-react'
+import { Users, Plus, Mail, Copy, Check, Loader2, Pencil, Trash2, X } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import type { CollaborationRoom } from '@/lib/types/database'
+import { DEMO_USER_ID } from '@/lib/demo-user'
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,10 @@ export default function CollaborationPage() {
   const [newRoomName, setNewRoomName] = useState('')
   const [createError, setCreateError] = useState('')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
+  const [editingRoomTitle, setEditingRoomTitle] = useState('')
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [isDeletingRoomId, setIsDeletingRoomId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchRooms()
@@ -100,6 +105,74 @@ export default function CollaborationPage() {
     navigator.clipboard.writeText(link)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const startRename = (room: CollaborationRoom) => {
+    setEditingRoomId(room.id)
+    setEditingRoomTitle(room.title)
+  }
+
+  const cancelRename = () => {
+    setEditingRoomId(null)
+    setEditingRoomTitle('')
+  }
+
+  const handleRenameRoom = async (room: CollaborationRoom) => {
+    const title = editingRoomTitle.trim()
+    if (!title || title === room.title) {
+      cancelRename()
+      return
+    }
+
+    setIsSavingEdit(true)
+    const previousRooms = rooms
+    setRooms((prev) => prev.map((item) => (item.id === room.id ? { ...item, title } : item)))
+
+    try {
+      const response = await fetch(`/api/collaboration/rooms/${room.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        setRooms(previousRooms)
+        alert(errorData.error || 'Failed to rename room')
+      }
+    } catch (error) {
+      console.error('Error renaming room:', error)
+      setRooms(previousRooms)
+      alert('Failed to rename room')
+    } finally {
+      setIsSavingEdit(false)
+      cancelRename()
+    }
+  }
+
+  const handleDeleteRoom = async (room: CollaborationRoom) => {
+    const confirmed = window.confirm(`Delete "${room.title}" study group? This cannot be undone.`)
+    if (!confirmed) return
+
+    setIsDeletingRoomId(room.id)
+    const previousRooms = rooms
+    setRooms((prev) => prev.filter((item) => item.id !== room.id))
+
+    try {
+      const response = await fetch(`/api/collaboration/rooms/${room.id}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        setRooms(previousRooms)
+        alert(errorData.error || 'Failed to delete room')
+      }
+    } catch (error) {
+      console.error('Error deleting room:', error)
+      setRooms(previousRooms)
+      alert('Failed to delete room')
+    } finally {
+      setIsDeletingRoomId(null)
+    }
   }
 
   return (
@@ -187,14 +260,64 @@ export default function CollaborationPage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="w-5 h-5" />
-                      {room.title}
-                    </CardTitle>
+                    {editingRoomId === room.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={editingRoomTitle}
+                          onChange={(e) => setEditingRoomTitle(e.target.value)}
+                          className="h-8"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              void handleRenameRoom(room)
+                            }
+                            if (e.key === 'Escape') {
+                              cancelRename()
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={() => void handleRenameRoom(room)}
+                          disabled={isSavingEdit || !editingRoomTitle.trim()}
+                        >
+                          <Check className="w-4 h-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={cancelRename} disabled={isSavingEdit}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="w-5 h-5" />
+                        {room.title}
+                      </CardTitle>
+                    )}
                     <CardDescription className="mt-2">
                       {room.topic}
                     </CardDescription>
                   </div>
+                  {room.created_by === DEMO_USER_ID && editingRoomId !== room.id ? (
+                    <div className="flex items-center gap-1">
+                      <Button size="icon" variant="ghost" onClick={() => startRename(room)} title="Rename room">
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => void handleDeleteRoom(room)}
+                        disabled={isDeletingRoomId === room.id}
+                        title="Delete room"
+                      >
+                        {isDeletingRoomId === room.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </CardHeader>
               <CardContent>

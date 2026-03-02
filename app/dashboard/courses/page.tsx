@@ -12,11 +12,14 @@ export default function CoursesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [enrollingCourses, setEnrollingCourses] = useState<Set<string>>(new Set())
   const [enrolledCourses, setEnrolledCourses] = useState<Set<string>>(new Set())
-  const [filter, setFilter] = useState<'all' | 'practitioner' | 'associate' | 'advanced'>('all')
+  const [filter, setFilter] = useState<'all' | 'practitioner' | 'associate' | 'advanced' | 'enrolled'>('all')
 
   useEffect(() => {
     const fetchCourses = async () => {
-      const url = filter === 'all' ? '/api/courses' : `/api/courses?level=${filter}`
+      const url =
+        filter === 'all' || filter === 'enrolled'
+          ? '/api/courses'
+          : `/api/courses?level=${filter}`
       const response = await fetch(url)
       if (!response.ok) {
         setIsLoading(false)
@@ -72,6 +75,11 @@ export default function CoursesPage() {
     }
   }
 
+  const filteredCourses =
+    filter === 'enrolled'
+      ? courses.filter((course) => enrolledCourses.has(course.id))
+      : courses
+
   return (
     <div className="space-y-6">
       <div>
@@ -83,14 +91,14 @@ export default function CoursesPage() {
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
-        {(['all', 'practitioner', 'associate', 'advanced'] as const).map((level) => (
+        {(['all', 'practitioner', 'associate', 'advanced', 'enrolled'] as const).map((level) => (
           <Button
             key={level}
             onClick={() => setFilter(level)}
             variant={filter === level ? 'default' : 'outline'}
             className="capitalize"
           >
-            {level === 'all' ? 'All Paths' : level}
+            {level === 'all' ? 'All Paths' : level === 'enrolled' ? 'Enrolled' : level}
           </Button>
         ))}
       </div>
@@ -100,7 +108,7 @@ export default function CoursesPage() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
-      ) : courses.length === 0 ? (
+      ) : filteredCourses.length === 0 ? (
         <Card>
           <CardContent className="py-12">
             <div className="text-center">
@@ -111,7 +119,7 @@ export default function CoursesPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map((course) => (
+          {filteredCourses.map((course) => (
             <Card key={course.id} className="hover:shadow-lg transition-shadow">
               <CardHeader>
                 <div className="flex items-start justify-between mb-2">

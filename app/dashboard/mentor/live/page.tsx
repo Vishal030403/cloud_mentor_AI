@@ -15,9 +15,12 @@ import {
   MessageCircle,
   Settings,
   Loader2,
+  MonitorUp,
+  MonitorOff,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { Badge } from '@/components/ui/badge'
+import Image from 'next/image'
 
 interface MentorSession {
   id: string
@@ -38,7 +41,10 @@ export default function LiveMentorPage() {
   const [isVideoOn, setIsVideoOn] = useState(true)
   const [isConnecting, setIsConnecting] = useState(false)
   const [sessionTime, setSessionTime] = useState(0)
+  const [isScreenSharing, setIsScreenSharing] = useState(false)
+  const [shareError, setShareError] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
+  const displayStreamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Sample mentor data
@@ -107,6 +113,64 @@ export default function LiveMentorPage() {
     }
   }, [activeSession, isConnecting])
 
+  useEffect(() => {
+    return () => {
+      if (displayStreamRef.current) {
+        displayStreamRef.current.getTracks().forEach((track) => track.stop())
+        displayStreamRef.current = null
+      }
+    }
+  }, [])
+
+  const stopScreenShare = () => {
+    if (displayStreamRef.current) {
+      displayStreamRef.current.getTracks().forEach((track) => track.stop())
+      displayStreamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    setIsScreenSharing(false)
+  }
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      stopScreenShare()
+      return
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      setShareError('Screen sharing is not supported in this browser.')
+      return
+    }
+
+    try {
+      setShareError('')
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      })
+      displayStreamRef.current = stream
+
+      const [videoTrack] = stream.getVideoTracks()
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          stopScreenShare()
+        }
+      }
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => undefined)
+      }
+      setIsScreenSharing(true)
+    } catch (error) {
+      console.error('Screen share failed:', error)
+      setShareError('Screen sharing permission denied or unavailable.')
+      stopScreenShare()
+    }
+  }
+
   const startSession = async (mentor: MentorSession) => {
     setIsConnecting(true)
 
@@ -120,10 +184,12 @@ export default function LiveMentorPage() {
 
   const endSession = () => {
     if (timerRef.current) clearInterval(timerRef.current)
+    stopScreenShare()
     setActiveSession(null)
     setSessionTime(0)
     setIsMicOn(true)
     setIsVideoOn(true)
+    setShareError('')
   }
 
   const formatTime = (seconds: number) => {
@@ -165,13 +231,29 @@ export default function LiveMentorPage() {
                   ref={videoRef}
                   className="w-full h-full object-cover"
                   playsInline
+                  autoPlay
+                  muted
                 />
-                {!isVideoOn && (
+                {!isScreenSharing && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                    <div className="text-center">
-                      <div className="text-6xl mb-4">{activeSession.mentorAvatar}</div>
-                      <p className="text-white font-medium">{activeSession.mentorName}</p>
+                    <div className="text-center space-y-3 px-6">
+                      <Image
+                        src="/images/ai-live-mentor.svg"
+                        alt="AI Live Mentor"
+                        width={220}
+                        height={220}
+                        className="mx-auto"
+                      />
+                      <p className="text-white font-medium">AI Live Mentor is ready</p>
+                      <p className="text-xs text-white/70">
+                        Start screen sharing and ask for step-by-step guidance while you build.
+                      </p>
                     </div>
+                  </div>
+                )}
+                {isScreenSharing && !isVideoOn && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/75">
+                    <p className="text-white text-sm">Screen share hidden. Enable video to view.</p>
                   </div>
                 )}
 
@@ -201,12 +283,27 @@ export default function LiveMentorPage() {
               </Button>
               <Button
                 size="lg"
+                variant={isScreenSharing ? 'default' : 'outline'}
+                onClick={() => void toggleScreenShare()}
+              >
+                {isScreenSharing ? <MonitorOff className="w-5 h-5" /> : <MonitorUp className="w-5 h-5" />}
+              </Button>
+              <Button
+                size="lg"
                 variant="destructive"
                 onClick={endSession}
               >
                 <PhoneOff className="w-5 h-5" />
                 End Session
               </Button>
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-xs text-muted-foreground">
+                {isScreenSharing
+                  ? 'Screen sharing is ON. AI mentor can now guide from your shared steps.'
+                  : 'Screen sharing is OFF. Click the monitor button to share your screen.'}
+              </p>
+              {shareError ? <p className="text-xs text-destructive">{shareError}</p> : null}
             </div>
           </div>
 

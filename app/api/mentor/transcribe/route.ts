@@ -1,5 +1,4 @@
-import { generateText } from 'ai'
-import { google } from '@ai-sdk/google'
+import { generateTextWithGemini } from '@/lib/gemini'
 
 export async function POST(req: Request) {
   try {
@@ -15,8 +14,8 @@ export async function POST(req: Request) {
     const base64Audio = Buffer.from(arrayBuffer).toString('base64')
 
     // Use Gemini as a lightweight fallback for transcription simulation
-    const result = await generateText({
-      model: google('gemini-2.0-flash'),
+    const result = await generateTextWithGemini({
+      model: 'gemini-2.5-flash',
       prompt: `You are a transcription assistant. The following is a base64 encoded audio file that needs to be transcribed. Return a short, clean transcription-style sentence only. Audio sample: ${base64Audio.substring(0, 100)}...`,
       temperature: 0.3,
     })

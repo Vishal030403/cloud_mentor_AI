@@ -5,21 +5,45 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sparkles, Send, Loader2, Mic, Volume2, Square, Phone } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import { useChat } from '@ai-sdk/react'
 import Link from 'next/link'
 
+type ChatMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+}
+
+type ProgressResponse = {
+  courses?: Array<{
+    course_title?: string
+    lessons_completed?: number
+    total_lessons?: number
+    progress_percentage?: number
+  }>
+}
+
+type MockAttempt = {
+  percentage: number
+  score: number
+  totalQuestions: number
+  attemptedAt: string
+  sectorStats?: Record<string, { correct: number; total: number }>
+}
+type MockAttemptsStore = Record<string, MockAttempt[]>
+const MOCK_ATTEMPTS_STORAGE_KEY = 'cloudmentor-mock-attempts'
+
 export default function MentorPage() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-    api: '/api/mentor/chat',
-    initialMessages: [
-      {
-        id: '1',
-        role: 'assistant',
-        content:
-          'Hello! I\'m CloudMentor AI, your AWS learning companion. I\'m here to help you understand AWS services, prepare for certifications, and solve AWS-related challenges. What would you like to learn about today?',
-      },
-    ],
-  })
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content:
+        "Hello! I'm CloudMentor AI, your AWS learning companion. I can help with AWS concepts, certification prep, and your course/mock-test performance. What would you like to ask?",
+    },
+  ])
+  const [input, setInput] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [learnerContext, setLearnerContext] = useState('')
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [hasScrolled, setHasScrolled] = useState(false)
@@ -33,6 +57,104 @@ export default function MentorPage() {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages, hasScrolled])
+
+  useEffect(() => {
+    const buildLearnerContext = async () => {
+      let contextParts: string[] = []
+      try {
+        const progressResponse = await fetch('/api/progress')
+        if (progressResponse.ok) {
+          const progressData = (await progressResponse.json()) as ProgressResponse
+          const courseLines = (progressData.courses || []).map((course) => {
+            const name = course.course_title || 'Course'
+            const completed = course.lessons_completed || 0
+            const total = course.total_lessons || 0
+            const pct = course.progress_percentage || 0
+            return `${name}: ${completed}/${total} lessons (${pct}%)`
+          })
+          if (courseLines.length > 0) {
+            contextParts.push(`Course progress:\n- ${courseLines.join('\n- ')}`)
+          }
+        }
+      } catch {
+        // keep chat usable even if progress API fails
+      }
+
+      try {
+        const raw = localStorage.getItem(MOCK_ATTEMPTS_STORAGE_KEY)
+        const store = raw ? (JSON.parse(raw) as MockAttemptsStore) : {}
+        const mockLines = Array.from({ length: 5 }).map((_, idx) => {
+          const testId = `mock-${idx + 1}`
+          const attempts = store[testId] || []
+          const latest = attempts.length > 0 ? attempts[attempts.length - 1] : null
+          return latest
+            ? `Mock ${idx + 1}: latest ${latest.percentage}% (${latest.score}/${latest.totalQuestions})`
+            : `Mock ${idx + 1}: NA`
+        })
+        contextParts.push(`Mock test status:\n- ${mockLines.join('\n- ')}`)
+      } catch {
+        // ignore local storage parse issues
+      }
+
+      setLearnerContext(contextParts.join('\n\n'))
+    }
+
+    buildLearnerContext()
+  }, [])
+
+  const sendMessage = async () => {
+    const trimmed = input.trim()
+    if (!trimmed || isLoading) return
+
+    const userMessage: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content: trimmed,
+    }
+
+    const nextMessages = [...messages, userMessage]
+    setMessages(nextMessages)
+    setInput('')
+    setIsLoading(true)
+
+    try {
+      const response = await fetch('/api/mentor/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          learnerContext,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to get mentor response')
+      }
+
+      const data = (await response.json()) as { text?: string }
+      const assistantMessage: ChatMessage = {
+        id: `a-${Date.now()}`,
+        role: 'assistant',
+        content: data.text || 'I could not generate a response right now. Please try again.',
+      }
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      console.error('Mentor chat error:', error)
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `e-${Date.now()}`,
+          role: 'assistant',
+          content: 'There was an issue getting a response. Please try again.',
+        },
+      ])
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleScroll = () => {
     setHasScrolled(true)
@@ -78,7 +200,7 @@ export default function MentorPage() {
 
       if (response.ok) {
         const { text } = await response.json()
-        handleInputChange({ target: { value: text } } as any)
+        setInput(text)
       }
     } catch (error) {
       console.error('Transcription error:', error)
@@ -178,14 +300,20 @@ export default function MentorPage() {
           <form 
             onSubmit={(e) => {
               e.preventDefault()
-              handleSubmit(e)
+              void sendMessage()
             }}
             className="space-y-3 border-t pt-4"
           >
             <div className="flex gap-2">
               <Input
                 value={input}
-                onChange={handleInputChange}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void sendMessage()
+                  }
+                }}
                 placeholder="Ask your AI mentor a question..."
                 className="flex-1"
                 disabled={isLoading || isRecording}
@@ -225,9 +353,7 @@ export default function MentorPage() {
                     type="button"
                     onClick={() => {
                       const newInput = 'Explain AWS EC2 and when to use it'
-                      handleInputChange({
-                        target: { value: newInput },
-                      } as any)
+                      setInput(newInput)
                     }}
                     className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:opacity-80 transition-opacity"
                   >
@@ -237,9 +363,7 @@ export default function MentorPage() {
                     type="button"
                     onClick={() => {
                       const newInput = 'What\'s the best AWS certification path for beginners?'
-                      handleInputChange({
-                        target: { value: newInput },
-                      } as any)
+                      setInput(newInput)
                     }}
                     className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:opacity-80 transition-opacity"
                   >
@@ -249,9 +373,7 @@ export default function MentorPage() {
                     type="button"
                     onClick={() => {
                       const newInput = 'Help me understand AWS cloud architecture principles'
-                      handleInputChange({
-                        target: { value: newInput },
-                      } as any)
+                      setInput(newInput)
                     }}
                     className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:opacity-80 transition-opacity"
                   >

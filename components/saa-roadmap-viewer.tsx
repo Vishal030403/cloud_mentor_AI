@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { CheckCircle2, ChevronDown, ChevronRight, PlayCircle } from 'lucide-react'
 import { VideoSidebar, type RoadmapLesson } from '@/components/video-sidebar'
+import { SectionQuiz, type SectionQuizQuestion } from '@/components/section-quiz'
 
 type RoadmapSection = {
   id: string
@@ -14,6 +15,211 @@ type RoadmapSection = {
 }
 
 const STORAGE_KEY = 'cloudmentor-saa-completed'
+const QUIZ_STORAGE_KEY = 'cloudmentor-saa-quiz-passed'
+const DAILY_COMPLETION_DATES_KEY = 'cloudmentor-daily-completion-dates'
+
+const architectQuizQuestions: SectionQuizQuestion[] = [
+  {
+    id: '1A',
+    question: 'Which cloud characteristic MOST directly enables converting large capital expenditure into variable operational expenditure?',
+    options: ['Multi-AZ', 'Multi-Region deployment', 'Larger EC2 instances', 'Dedicated Hosts'],
+    correctIndex: 1,
+    explanation:
+      'Multi-AZ protects within one region. Global latency optimization and resilience require deploying across multiple AWS Regions.',
+  },
+  {
+    id: '2A',
+    question: 'Which service best accelerates global static and dynamic content delivery?',
+    options: ['CloudFront', 'SQS', 'EFS', 'IAM'],
+    correctIndex: 0,
+    explanation:
+      'CloudFront uses a global edge network to cache and deliver content closer to users, reducing latency.',
+  },
+  {
+    id: '3A',
+    question: 'For strict RPO requirements, which architecture pattern is more suitable?',
+    options: ['Backup once a week', 'Cross-Region replication', 'Single AZ deployment', 'Bigger EC2 instance'],
+    correctIndex: 1,
+    explanation:
+      'Cross-Region replication reduces potential data loss during regional outages and improves recovery objectives.',
+  },
+  {
+    id: '4A',
+    question: 'What IAM principle should always be followed in production?',
+    options: ['Least privilege', 'Open access for speed', 'Root credentials for apps', 'Single shared user'],
+    correctIndex: 0,
+    explanation:
+      'Least privilege reduces blast radius and is a core AWS security best practice.',
+  },
+  {
+    id: '5A',
+    question: 'In S3 cost optimization, what is a recommended approach for infrequently accessed data?',
+    options: ['S3 Standard only', 'Lifecycle transitions to cheaper classes', 'Store in EBS snapshots only', 'Disable versioning always'],
+    correctIndex: 1,
+    explanation:
+      'Lifecycle rules automate transitions to lower-cost classes such as IA or Glacier based on access patterns.',
+  },
+  {
+    id: '6A',
+    question: 'Name the AWS service used for centralized multi-account governance.',
+    correctTextAnswer: 'AWS Organizations',
+    explanation:
+      'AWS Organizations enables account grouping, governance guardrails, and centralized policy management.',
+  },
+  
+  {
+    id: '7A',
+    question: 'Which cloud characteristic enables automatic scaling of resources based on demand fluctuations?',
+    options: ['Measured service', 'Rapid elasticity', 'Resource pooling', 'Dedicated infrastructure'],
+    correctIndex: 1,
+    explanation:
+      'Rapid elasticity allows resources to scale out and scale in automatically depending on workload demand.',
+  },
+  {
+    id: '8A',
+    question: 'Which AWS construct provides isolation from data center-level failures within a Region?',
+    options: ['Availability Zone', 'Edge Location', 'Local Zone', 'VPC Peering'],
+    correctIndex: 0,
+    explanation:
+      'An Availability Zone is physically isolated with independent power and networking, acting as a failure boundary.',
+  },
+  {
+    id: '9A',
+    question: 'Which component is NOT considered part of an AWS Region?',
+    options: ['Availability Zones', 'Regional services', 'Edge Locations', 'Regional control plane'],
+    correctIndex: 2,
+    explanation:
+      'Edge Locations are part of AWS Global Infrastructure but exist outside Regions for low-latency delivery.',
+  },
+  {
+    id: '10A',
+    question: 'Under the Shared Responsibility Model, who is responsible for patching the guest operating system on EC2?',
+    options: ['AWS', 'Customer', 'Shared responsibility equally', 'AWS Support'],
+    correctIndex: 1,
+    explanation:
+      'In EC2, AWS secures the infrastructure, but the customer manages the guest OS, middleware, and applications.',
+  },
+  {
+    id: '11A',
+    question: 'Which responsibility shifts to AWS when migrating from EC2-managed database to Amazon RDS?',
+    options: ['IAM configuration', 'Database engine patching', 'Security group management', 'VPC design'],
+    correctIndex: 1,
+    explanation:
+      'RDS is a managed service where AWS handles database engine patching and backups (if enabled).',
+  },
+  {
+    id: '12A',
+    question: 'Which Well-Architected pillar focuses on eliminating single points of failure?',
+    options: ['Security', 'Reliability', 'Cost Optimization', 'Operational Excellence'],
+    correctIndex: 1,
+    explanation:
+      'The Reliability pillar promotes redundancy, fault tolerance, and automated recovery.',
+  },
+  {
+    id: '13A',
+    question: 'Which pillar encourages performing operations as code and automation?',
+    options: ['Operational Excellence', 'Security', 'Sustainability', 'Performance Efficiency'],
+    correctIndex: 0,
+    explanation:
+      'Operational Excellence promotes infrastructure as code and automation for consistent operations.',
+  },
+  {
+    id: '14A',
+    question: 'Which pricing model provides maximum savings for predictable workloads over 3 years?',
+    options: ['On-Demand', 'Spot Instances', 'Savings Plans', 'Dedicated Hosts'],
+    correctIndex: 2,
+    explanation:
+      'Savings Plans provide significant discounts for 1- or 3-year commitments with predictable usage.',
+  },
+  {
+    id: '15A',
+    question: 'Which pricing option is best for interruptible, fault-tolerant batch workloads?',
+    options: ['Reserved Instances', 'On-Demand', 'Spot Instances', 'Enterprise Support'],
+    correctIndex: 2,
+    explanation:
+      'Spot Instances offer large discounts but may be interrupted, making them ideal for flexible workloads.',
+  },
+  {
+    id: '16A',
+    question: 'Which support plan includes a Technical Account Manager (TAM)?',
+    options: ['Developer', 'Business', 'Enterprise', 'Basic'],
+    correctIndex: 2,
+    explanation:
+      'Enterprise Support includes a dedicated TAM and proactive architectural guidance.',
+  },
+  {
+    id: '17A',
+    question: 'Which support plan provides 24/7 technical support without a dedicated TAM?',
+    options: ['Basic', 'Developer', 'Business', 'Enterprise'],
+    correctIndex: 2,
+    explanation:
+      'Business Support offers 24/7 support but does not include a dedicated TAM.',
+  },
+  {
+    id: '18A',
+    question: 'Which cloud concept allows multiple customers to securely share infrastructure?',
+    options: ['Elasticity', 'Multi-tenancy', 'Broad network access', 'Measured service'],
+    correctIndex: 1,
+    explanation:
+      'Multi-tenancy enables shared infrastructure with logical isolation between customers.',
+  },
+  {
+    id: '19A',
+    question: 'Which Well-Architected pillar focuses on right-sizing resources based on workload needs?',
+    options: ['Performance Efficiency', 'Security', 'Reliability', 'Sustainability'],
+    correctIndex: 0,
+    explanation:
+      'Performance Efficiency ensures selecting appropriate instance types and resource configurations.',
+  },
+  {
+    id: '20A',
+    question: 'A company consistently overprovisions resources to avoid downtime. Which tradeoff is being mismanaged?',
+    options: ['Security vs Cost', 'Reliability vs Cost', 'Performance vs Sustainability', 'Operational vs Security'],
+    correctIndex: 1,
+    explanation:
+      'Overprovisioning improves reliability but violates cost optimization. A balance is required.',
+  },
+  {
+    id: '21A',
+    question: 'Which AWS infrastructure design reduces latency for static content globally?',
+    options: ['Multi-AZ', 'Edge Locations with CloudFront', 'Larger EC2 instances', 'Dedicated Hosts'],
+    correctIndex: 1,
+    explanation:
+      'CloudFront uses Edge Locations worldwide to cache and deliver static content closer to users.',
+  },
+  {
+    id: '22A',
+    question: 'Which pillar directly supports minimizing environmental impact by reducing idle resources?',
+    options: ['Cost Optimization', 'Reliability', 'Security', 'Sustainability'],
+    correctIndex: 3,
+    explanation:
+      'The Sustainability pillar focuses on efficient resource usage and reducing environmental footprint.',
+  },
+  {
+    id: '23A',
+    question: 'Which cloud characteristic ensures services are accessible over the network via standard mechanisms?',
+    options: ['Broad network access', 'Elasticity', 'Resource pooling', 'On-demand self-service'],
+    correctIndex: 0,
+    explanation:
+      'Broad network access ensures services are available over the internet using standard protocols.',
+  },
+  {
+    id: '24A',
+    question: 'Which AWS pricing tool helps estimate projected costs before deployment?',
+    options: ['Cost Explorer', 'AWS Pricing Calculator', 'Trusted Advisor', 'AWS Budgets'],
+    correctIndex: 1,
+    explanation:
+      'AWS Pricing Calculator is used to forecast costs before deploying resources.',
+  },
+  {
+    id: '25A',
+    question: 'Under the Shared Responsibility Model, AWS is responsible for which layer?',
+    options: ['Application code security', 'Guest OS patching', 'Hypervisor and physical infrastructure', 'IAM user permissions'],
+    correctIndex: 2,
+    explanation:
+      'AWS secures the underlying physical infrastructure and hypervisor layer, while customers secure OS and above.',
+  }// Add remaining architect-level questions up to 25 here.
+]
 
 const awsSaaRoadmap: RoadmapSection[] = [
   {
@@ -137,6 +343,7 @@ export function SAARoadmapViewer() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [selectedLesson, setSelectedLesson] = useState<RoadmapLesson | null>(null)
   const [completedLessonIds, setCompletedLessonIds] = useState<Set<string>>(new Set())
+  const [passedSectionIds, setPassedSectionIds] = useState<Set<string>>(new Set())
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarMinimized, setSidebarMinimized] = useState(false)
 
@@ -151,6 +358,10 @@ export function SAARoadmapViewer() {
     if (stored) {
       setCompletedLessonIds(new Set(JSON.parse(stored) as string[]))
     }
+    const storedQuizPassed = localStorage.getItem(QUIZ_STORAGE_KEY)
+    if (storedQuizPassed) {
+      setPassedSectionIds(new Set(JSON.parse(storedQuizPassed) as string[]))
+    }
   }, [sections])
 
   const allLessons = useMemo(() => sections.flatMap((section) => section.lessons), [sections])
@@ -161,11 +372,12 @@ export function SAARoadmapViewer() {
   const sectionCompleteMap = useMemo(() => {
     return sections.reduce<Record<string, boolean>>((acc, section) => {
       acc[section.id] =
-        section.lessons.length > 0 &&
-        section.lessons.every((lesson) => completedLessonIds.has(lesson.id))
+        passedSectionIds.has(section.id) ||
+        (section.lessons.length > 0 &&
+          section.lessons.every((lesson) => completedLessonIds.has(lesson.id)))
       return acc
     }, {})
-  }, [sections, completedLessonIds])
+  }, [sections, completedLessonIds, passedSectionIds])
 
   const shouldShiftContent = sidebarOpen && !sidebarMinimized
 
@@ -263,6 +475,16 @@ export function SAARoadmapViewer() {
                                         next.delete(lesson.id)
                                       } else {
                                         next.add(lesson.id)
+                                        const today = new Date().toISOString().slice(0, 10)
+                                        const rawDates = localStorage.getItem(DAILY_COMPLETION_DATES_KEY)
+                                        const dateSet = new Set<string>(
+                                          rawDates ? (JSON.parse(rawDates) as string[]) : [],
+                                        )
+                                        dateSet.add(today)
+                                        localStorage.setItem(
+                                          DAILY_COMPLETION_DATES_KEY,
+                                          JSON.stringify(Array.from(dateSet)),
+                                        )
                                       }
                                       localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(next)))
                                       return next
@@ -275,6 +497,20 @@ export function SAARoadmapViewer() {
                             </div>
                           )
                         })}
+                        <SectionQuiz
+                          sectionName={section.title}
+                          moduleTitles={section.lessons.map((lesson) => lesson.title)}
+                          questions={architectQuizQuestions}
+                          onComplete={(passed) => {
+                            if (!passed) return
+                            setPassedSectionIds((prev) => {
+                              const next = new Set(prev)
+                              next.add(section.id)
+                              localStorage.setItem(QUIZ_STORAGE_KEY, JSON.stringify(Array.from(next)))
+                              return next
+                            })
+                          }}
+                        />
                       </div>
                     )}
                   </div>

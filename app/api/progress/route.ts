@@ -5,15 +5,32 @@ import { DEMO_USER_ID } from '@/lib/demo-user'
 export async function GET() {
   try {
     const courses = await query<{
-      id: string
-      user_id: string
       course_id: string
+      course_title: string
+      course_level: string
+      user_id: string
       lessons_completed: number
       total_lessons: number
       progress_percentage: number
       created_at: string
       updated_at: string
-    }>('SELECT * FROM user_progress WHERE user_id = $1 ORDER BY updated_at DESC', [DEMO_USER_ID])
+    }>(
+      `SELECT
+         up.course_id,
+         c.title AS course_title,
+         c.level AS course_level,
+         up.user_id,
+         up.lessons_completed,
+         up.total_lessons,
+         up.progress_percentage,
+         up.created_at::text,
+         up.updated_at::text
+       FROM user_progress up
+       INNER JOIN courses c ON c.id = up.course_id
+       WHERE up.user_id = $1
+       ORDER BY up.updated_at DESC`,
+      [DEMO_USER_ID],
+    )
 
     const assessments = await query<{
       id: string

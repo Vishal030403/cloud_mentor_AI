@@ -3,12 +3,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Award, TrendingUp, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { UserProgress, AssessmentResult, GamificationStats } from '@/lib/types/database'
+import type { AssessmentResult, GamificationStats } from '@/lib/types/database'
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -16,8 +15,28 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 
+type CourseProgress = {
+  course_id: string
+  course_title: string
+  course_level: string
+  lessons_completed: number
+  total_lessons: number
+  progress_percentage: number
+}
+
+type SectorStats = Record<string, { correct: number; total: number }>
+type MockAttempt = {
+  score: number
+  totalQuestions: number
+  percentage: number
+  attemptedAt: string
+  sectorStats?: SectorStats
+}
+type MockAttemptsStore = Record<string, MockAttempt[]>
+const MOCK_ATTEMPTS_STORAGE_KEY = 'cloudmentor-mock-attempts'
+
 interface ProgressStats {
-  courses: UserProgress[]
+  courses: CourseProgress[]
   assessments: AssessmentResult[]
   gamification: GamificationStats | null
   totalLessonsCompleted: number
@@ -33,6 +52,21 @@ export default function ProgressPage() {
     averageScore: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
+  const [readinessPercentage, setReadinessPercentage] = useState(0)
+  const [weakSectors, setWeakSectors] = useState<string[]>([])
+  const [latestMockScores, setLatestMockScores] = useState<
+    Array<{ name: string; score: number | null; fullName: string }>
+  >([])
+
+  const getCourseShortLabel = (course: CourseProgress) => {
+    const title = course.course_title.toLowerCase()
+    if (title.includes('associate')) return 'Associate'
+    if (title.includes('practitioner')) return 'Practitioner'
+    if (title.includes('advanced')) return 'Advanced'
+    return course.course_level
+      ? course.course_level[0].toUpperCase() + course.course_level.slice(1)
+      : 'Course'
+  }
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -42,7 +76,7 @@ export default function ProgressPage() {
         return
       }
       const data = await response.json()
-      const progressData = (data.courses || []) as UserProgress[]
+      const progressData = (data.courses || []) as CourseProgress[]
       const assessmentData = (data.assessments || []) as AssessmentResult[]
       const gamificationData = (data.gamification ?? null) as GamificationStats | null
 
@@ -59,6 +93,64 @@ export default function ProgressPage() {
         averageScore: avgScore,
       })
 
+      const raw = localStorage.getItem(MOCK_ATTEMPTS_STORAGE_KEY)
+      const store = raw ? (JSON.parse(raw) as MockAttemptsStore) : {}
+      const mockScoreRows = Array.from({ length: 5 }).map((_, idx) => {
+        const testNumber = idx + 1
+        const testId = `mock-${testNumber}`
+        const attempts = store[testId] ?? []
+        const latest = attempts.length > 0 ? attempts[attempts.length - 1] : null
+        return {
+          name: `M${testNumber}`,
+          fullName: `Mock Test ${testNumber}`,
+          score: latest?.percentage ?? null,
+          sectorStats: latest?.sectorStats,
+        }
+      })
+      setLatestMockScores(
+        mockScoreRows.map((row) => ({
+          name: row.name,
+          fullName: row.fullName,
+          score: row.score,
+        })),
+      )
+
+      const attemptedScores = mockScoreRows
+        .map((row) => row.score)
+        .filter((score): score is number => typeof score === 'number')
+      const averageMockScore = attemptedScores.length
+        ? Math.round(attemptedScores.reduce((sum, score) => sum + score, 0) / attemptedScores.length)
+        : 0
+      const averageCourseProgress = progressData.length
+        ? Math.round(
+            progressData.reduce((sum, course) => sum + (course.progress_percentage || 0), 0) / progressData.length,
+          )
+        : 0
+      setReadinessPercentage(Math.round((averageCourseProgress * 0.6) + (averageMockScore * 0.4)))
+
+      const sectorAggregate: SectorStats = {}
+      for (const row of mockScoreRows) {
+        const sectorStats = row.sectorStats
+        if (!sectorStats) continue
+        for (const [sector, values] of Object.entries(sectorStats)) {
+          const existing = sectorAggregate[sector] ?? { correct: 0, total: 0 }
+          sectorAggregate[sector] = {
+            correct: existing.correct + values.correct,
+            total: existing.total + values.total,
+          }
+        }
+      }
+
+      const weak = Object.entries(sectorAggregate)
+        .map(([sector, values]) => ({
+          sector,
+          pct: values.total > 0 ? Math.round((values.correct / values.total) * 100) : 0,
+        }))
+        .sort((a, b) => a.pct - b.pct)
+        .slice(0, 3)
+        .map((item) => item.sector)
+      setWeakSectors(weak)
+
       setIsLoading(false)
     }
 
@@ -67,13 +159,17 @@ export default function ProgressPage() {
 
   // Prepare chart data
   const courseProgressData = stats.courses.map((course) => ({
-    name: `Course ${course.course_id.slice(0, 8)}`,
+    name: getCourseShortLabel(course),
+    fullName: course.course_title,
     progress: course.progress_percentage || 0,
   }))
 
-  const assessmentScoresData = stats.assessments.slice(-10).map((assessment, idx) => ({
-    name: `Assessment ${idx + 1}`,
-    score: assessment.score,
+  const assessmentScoresData = latestMockScores.map((mock) => ({
+    name: mock.name,
+    fullName: mock.fullName,
+    score: mock.score ?? 0,
+    isNA: mock.score === null,
+    scoreLabel: mock.score === null ? 'NA' : `${mock.score}%`,
   }))
 
   return (
@@ -157,16 +253,28 @@ export default function ProgressPage() {
                 No course data yet
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={courseProgressData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
+                  <XAxis dataKey="name" interval={0} />
                   <YAxis />
                   <Tooltip />
                   <Bar dataKey="progress" fill="hsl(var(--primary))" />
                 </BarChart>
               </ResponsiveContainer>
             )}
+            <div className="mt-4 space-y-1 text-sm">
+              <p>
+                <span className="text-muted-foreground">AI readiness for exam: </span>
+                <span className="font-semibold">{readinessPercentage}%</span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">Weak sectors: </span>
+                <span className="font-semibold">
+                  {weakSectors.length > 0 ? weakSectors.join(', ') : 'NA'}
+                </span>
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -187,22 +295,32 @@ export default function ProgressPage() {
                 No assessment data yet
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={assessmentScoresData}>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={assessmentScoresData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
+                  <XAxis dataKey="name" interval={0} />
                   <YAxis domain={[0, 100]} />
                   <Tooltip />
-                  <Line
-                    type="monotone"
+                  <Bar
                     dataKey="score"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={{ fill: 'hsl(var(--primary))' }}
-                  />
-                </LineChart>
+                  >
+                    {assessmentScoresData.map((entry) => (
+                      <Cell
+                        key={entry.name}
+                        fill={entry.isNA ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))'}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             )}
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              {assessmentScoresData.map((item) => (
+                <p key={`${item.name}-label`}>
+                  {item.fullName}: <span className="font-medium text-foreground">{item.scoreLabel}</span>
+                </p>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
